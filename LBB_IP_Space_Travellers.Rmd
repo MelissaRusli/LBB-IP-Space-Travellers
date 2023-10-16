@@ -1,0 +1,232 @@
+---
+title: "Space Travellers Data Analysis 2023"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows # rows/columns
+    vertical_layout: scroll # fill/scroll
+---
+
+```{r setup, include=FALSE}
+# clear-up the environment
+rm(list = ls())
+
+# ---- (1) LIBRARY & SETUP ----
+# library & read data
+library(httr)    
+set_config(use_proxy(url="10.3.100.207",port=8080))
+
+library(flexdashboard)
+library(dplyr)
+library(ggplot2) # visualisasi
+library(scales) # untuk tampilan digit (memberikan koma dll)
+library(glue)
+library(plotly) 
+library(lubridate) # working with datetime
+options(scipen = 100) # supaya output tidak menampilkan notasi ilmiah (10-e10)
+
+# **📘 Referensi:**
+# Source Data : https://www.kaggle.com/datasets/kaushiksinghrawat/humans-to-have-visited-space
+# membaca data
+space <- read.csv("data_input/space_travellers.csv", stringsAsFactors = T)
+```
+
+Row 
+----------
+
+
+### Top 20 Countries of Space Travellers
+
+```{r}
+# Plot 1 Lollipop: Top 20 Countries of Space Travellers
+
+# Data Preparation
+# dplyr
+space_traveller <- space %>% 
+  select(-X.) %>%  # Membuang kolom 'X.' karena tidak memberikan informasi penting (hanya nomor urut data)
+  mutate(Date = as.Date(Date), # Mengubah tipe data
+         Year = year(Date)) # Mengestrak Tahun dari kolom 'Date' dan membuat kolom baru 'Year' 
+
+# Membuat label kalimat untuk informasi periode data yang diambil
+data_start_date <- min(space_traveller$Date)
+data_end_date <-max(space_traveller$Date)
+
+period_data <- glue('{format(data_start_date, "%d %b %Y")}', 
+                    ' - ',
+                   '{format(data_end_date, "%d %b %Y")}')
+
+# Membuat fungsi untuk mengkategorikan tahun (setiap 10 thn)
+convert_decade <- function(y){ 
+    if(y > 2020 & y <= 2023)
+      {
+      y <- "2021 - 2023" # Space Travel antara thn 2021 - 2023
+    }
+    else 
+      if(y > 2010 & y <= 2020)
+      {
+      y <- "2011 - 2020" # Space Travel antara thn 2021 - 2023
+    }
+    else 
+      if(y > 2000 & y <= 2010)
+      {
+      y <- "2001 - 2010" # Space Travel antara thn 2001 - 2010
+    }
+    else 
+      if(y > 1990 & y <= 2000)
+      {
+      y <- "1991 - 2000" # Space Travel antara thn 1991 - 2000
+    }
+    else 
+      if(y > 1980 & y <= 1990)
+      {
+      y <- "1981 - 1990" # Space Travel antara thn 1981 - 1990
+    }
+    else 
+      if(y > 1970 & y <= 1980)
+      {
+      y <- "1971 - 1980" # Space Travel antara thn 1971 - 1980
+    }
+    else 
+      if(y > 1960 & y <= 1970)
+      {
+      y <- "1961 - 1970" # Space Travel antara thn 1971 - 1980
+      }
+}
+
+# Membuat kolom berisikan value periode space traveller
+space_traveller$Period_Travel <- sapply(X = space_traveller$Year, 
+                            FUN = convert_decade)
+space_traveller$Period_Travel <- as.factor(space_traveller$Period_Travel)
+
+# data transformation
+space_traveller_count <- space_traveller %>% 
+  group_by(Nationality) %>% 
+  summarise(freq = n()) %>%
+  ungroup() %>% 
+  arrange(-freq) %>% # arrange(desc(freq))
+  head(20) %>% 
+  # menambahkan label untuk tooltip
+  mutate(label = glue(
+    "Total of {freq} Space Travellers
+     Country: {Nationality}"
+  ))
+  
+# membuat plot statis
+plot1 <- ggplot(data = space_traveller_count, 
+                aes(x = freq,
+                    y = reorder(Nationality, freq),
+                    color = freq,
+                    text = label)) +
+  geom_point(size = 3) +
+  geom_segment(aes(x = 0,
+                   xend = freq,
+                   yend = Nationality),
+                   size = 1.0) +
+  scale_color_gradient(low = "red", 
+                       high = "blue") +
+  labs(title = glue('Top 20 Countries Space Travellers (',
+                    '{period_data}', ')'),
+       x = "Number of Travellers",
+       y = NULL) +
+  theme_minimal() +
+  theme(legend.position = "none") 
+
+# membuat plot interaktif
+ggplotly(plot1, tooltip = "text")
+```
+
+Row 
+
+-----------------------------------------------------------------------
+
+### Top 3 Countries with Most Space Travellers Every Decades
+
+```{r}
+# Plot 2 : Grouped Bar Charts : Top 3 Countries with Most Space Travellers Every Decades
+
+# data transformation
+# Memfilter Data Top 3 Negara dengan Jumlah Space Travellers (Astronouts) terbanyak dalam setiap periode 10 tahun
+space_traveller_top3 <- space_traveller %>% 
+  group_by(Period_Travel) %>% 
+  count(Nationality) %>% 
+  rename(No_Space_Travellers = n) %>% 
+  arrange(Period_Travel, desc(No_Space_Travellers)) %>% 
+  slice(1:3) %>% 
+  ungroup()
+
+
+# menambahkan label untuk tooltip
+space_traveller_top3 <- space_traveller_top3 %>% 
+  mutate(label = glue(
+    "Total Space Travellers: {No_Space_Travellers} pax
+     Country: {Nationality}"
+  ))
+
+plot2 <- ggplot(data = space_traveller_top3, 
+                    aes(x = Period_Travel,
+                        y = No_Space_Travellers,
+                        text = label)
+                ) +
+  geom_col(aes(fill = Nationality), position = "dodge") +
+  labs(title = glue('Top 3 Countries with Most Space Travellers'), 
+       x = "Decade Period",
+       y = "Number of Travellers") +
+  theme_minimal() +
+  theme(legend.position = "none") 
+
+
+# plot interaktif: ggplotly
+ggplotly(plot2, tooltip = "text")
+```
+
+Row 
+----------
+
+### Trend Space Launch Performance By Countries which Listed on Top 3 since 2000 
+
+```{r}
+# Plot 3 Line: Trend Comparison for 3 Top Countries since Year 2000 on Space Launch Performance
+
+# List kategori 3 batch periode terakhir (diatas tahun 2000)
+last_3_decades <- tail(unique(space_traveller$Period_Travel),3)
+# Subset nama top 3 countries since 2000
+top_3_countries_since_2000 <- unique(filter(.data = space_traveller_top3, Period_Travel %in% last_3_decades)$Nationality)
+
+# data transformation
+trend_space_traveller_top3_countries <- filter(space_traveller, 
+                                               Nationality %in% top_3_countries_since_2000) %>% 
+  group_by(Year) %>% 
+  count(Nationality) %>% 
+  rename(No_Space_Travellers = n) %>% 
+  ungroup()
+
+# menambahkan label untuk tooltip
+trend_space_traveller_top3_countries <- trend_space_traveller_top3_countries %>% 
+  mutate(label = glue(
+    "{No_Space_Travellers} Space Travellers
+     Year: {Year}"
+  ))
+
+plot3 <- ggplot(data = trend_space_traveller_top3_countries, 
+       mapping = aes(x = Year, y = No_Space_Travellers, color = Nationality)) +
+  geom_line() +
+  geom_point(col = "black", aes(text = label)) +
+  scale_y_continuous(labels = NULL) +
+  facet_wrap(facets = "Nationality", nrow = 3, scales = "free_y") +
+  labs(title = glue('Space Launch Performance Comparison By Top 3 Countries since Year 2000'), 
+       x = "Year",
+       y = "Number of Travellers") +
+  theme_minimal() +
+  theme(legend.position = "none") 
+
+# plot interaktif: ggplotly
+ggplotly(plot3, tooltip = "text")
+```
+
+
+```{r}
+glimpse(space_traveller)
+```
+
+```{r}
+summary(space_traveller)
+```
